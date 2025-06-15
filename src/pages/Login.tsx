@@ -1,18 +1,26 @@
+
 import { useRef } from "react";
 import { useAuthForm } from "@/hooks/useAuthForm";
 import { LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 export default function Login() {
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
-  const { loading, error, login } = useAuthForm();
+  const { loading, error, unconfirmedEmail, login, resendConfirmation } = useAuthForm();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const email = emailRef.current?.value || "";
     const password = passwordRef.current?.value || "";
     await login(email, password);
+  };
+
+  const handleResend = async () => {
+    if (unconfirmedEmail) {
+      await resendConfirmation(unconfirmedEmail);
+    }
   };
 
   return (
@@ -52,7 +60,29 @@ export default function Login() {
           )}
         </Button>
       </form>
-      {error && (
+      
+      {unconfirmedEmail && (
+        <Alert variant="default" className="mt-4 bg-yellow-100 border-yellow-300">
+          <AlertTitle>Email Not Confirmed</AlertTitle>
+          <AlertDescription>
+            Please check your inbox (<span className="font-mono">{unconfirmedEmail}</span>) for a confirmation email.
+            <div className="mt-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="font-semibold"
+                onClick={handleResend}
+                disabled={loading}
+              >
+                {loading ? "Resending..." : "Resend Confirmation Email"}
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {error && !unconfirmedEmail && (
         <div className="px-3 py-2 rounded bg-destructive/10 text-destructive text-sm mt-2 border border-destructive/40">
           {error}
         </div>
