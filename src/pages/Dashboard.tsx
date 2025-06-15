@@ -1,3 +1,18 @@
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import MainLayout from "../layouts/MainLayout";
+import Index from "./Index";
+import NotFound from "./NotFound";
+import Dashboard from "./Dashboard";
+import Login from "./Login";
+import Register from "./Register";
+import CodeEditor from "./CodeEditor";
+import KanbanBoard from "./KanbanBoard";
+import Chat from "./Chat";
+import ProtectedRoute from "../components/ProtectedRoute";
 
 const Dashboard = () => {
   return (
@@ -20,6 +35,10 @@ const Dashboard = () => {
         <a href="/chat" className="rounded-xl border bg-card shadow p-6 hover:shadow-lg hover:scale-105 transition transform">
           <div className="font-semibold text-xl mb-2">Team Chat</div>
           <div className="text-muted-foreground">Communicate in real time</div>
+        </a>
+        <a href="/pulls" className="rounded-xl border bg-card shadow p-6 hover:shadow-lg hover:scale-105 transition transform">
+          <div className="font-semibold text-xl mb-2">Pull Requests</div>
+          <div className="text-muted-foreground">Review GitHub PRs, discuss, and comment</div>
         </a>
       </div>
     </div>

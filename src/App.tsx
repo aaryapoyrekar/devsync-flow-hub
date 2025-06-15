@@ -12,6 +12,7 @@ import Register from "./pages/Register";
 import CodeEditor from "./pages/CodeEditor";
 import KanbanBoard from "./pages/KanbanBoard";
 import Chat from "./pages/Chat";
+import PullRequests from "./pages/PullRequests";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -67,6 +68,16 @@ const App = () => (
               <ProtectedRoute allowedRoles={["admin", "member"]}>
                 <MainLayout>
                   <Chat />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pulls"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "member"]}>
+                <MainLayout>
+                  <PullRequests />
                 </MainLayout>
               </ProtectedRoute>
             }
