@@ -1,13 +1,16 @@
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { markdown } from "@codemirror/lang-markdown";
 import { useAuthUser } from "@/hooks/useAuthUser";
-import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+// Yjs and provider imports
+import * as Y from "yjs";
+import { WebsocketProvider } from "y-websocket";
+import { EditorView, keymap, drawSelection, ViewUpdate, Decoration, DecorationSet } from "@codemirror/view";
+import { Extension, StateField, StateEffect } from "@codemirror/state";
 
 const LANGUAGE_OPTIONS = [
   { label: "JavaScript", value: "javascript" },
@@ -27,146 +30,168 @@ const EXTENSIONS_MAP: Record<string, any> = {
   markdown: markdown(),
 };
 
-type CursorInfo = {
-  username: string;
-  color: string;
-  pos: number;
-};
+const YWS_URL = "wss://demos.yjs.dev"; // Official public y-websocket for demo/testing; use own for production!
+const ROOM = "devsync-collab-editor-demo";
 
 function randomColorFromString(str: string) {
-  // Dummy color generator for user cursors
   let hash = 0;
   for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  const color = ["#34d399", "#f59e42", "#38bdf8", "#f43f5e", "#c084fc", "#fbbf24", "#64748b"];
+  const color = [
+    "#34d399", "#f59e42", "#38bdf8", "#f43f5e", "#c084fc", "#fbbf24", "#64748b"
+  ];
   return color[Math.abs(hash) % color.length];
 }
 
-export default function CollaborativeCodeEditor() {
-  const { user, loading } = useAuthUser();
-  const username = user?.user_metadata?.name || user?.email || "Anonymous";
-  const roomId = "main-editor"; // In a real app, this could be param
-  const [value, setValue] = useState<string>(FILE_TEMPLATES["javascript"]);
-  const [language, setLanguage] = useState("javascript");
-  const [cursors, setCursors] = useState<Record<string, CursorInfo>>({});
-  const editorRef = useRef<any>(null);
-
-  // Setup supabase RE channel for presence+broadcast
-  useEffect(() => {
-    if (!user) return;
-    const channel = supabase.channel(`collab-editor-${roomId}`, {
-      config: { presence: { key: user.id } },
-    });
-
-    // Send presence info (cursor)
-    channel
-      .on("presence", { event: "sync" }, () => {
-        const state = channel.presenceState() as Record<string, CursorInfo[]>;
-        let newCursors: Record<string, CursorInfo> = {};
-        Object.keys(state).forEach((k) => {
-          const info = state[k][0];
-          if (info && info.username !== username) newCursors[k] = info;
-        });
-        setCursors(newCursors);
-      })
-      .on("broadcast", { event: "code_update" }, (payload) => {
-        setValue(payload.payload.code);
-      })
-      .on("broadcast", { event: "cursor" }, (payload) => {
-        const { userId, pos, username: uname, color } = payload.payload;
-        setCursors(prev => ({
-          ...prev,
-          [userId]: { username: uname, color, pos }
-        }));
+// Custom extension for showing remote user cursors
+function yRemoteCursorExtension(yAwareness: any, selfClientId: number) {
+  return EditorView.decorations.compute([EditorView.decorations], (state) => {
+    const decos: any[] = [];
+    if (yAwareness && yAwareness.getStates) {
+      yAwareness.getStates().forEach((aw: any, clientId: number) => {
+        if (clientId === selfClientId) return;
+        const pos = aw.cursor?.pos;
+        const color = aw.user?.color ?? "#888";
+        const name = aw.user?.name ?? "User";
+        if (typeof pos === "number") {
+          decos.push(
+            Decoration.widget({
+              widget: new CursorWidget(name, color),
+              side: 1
+            }).range(pos)
+          );
+        }
       });
+    }
+    return Decoration.set(decos, true);
+  });
+}
 
-    channel.subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
-        await channel.track({
-          username,
-          color: randomColorFromString(username),
-          pos: 0,
-        });
-      }
-    });
+class CursorWidget extends WidgetType {
+  name: string;
+  color: string;
+  constructor(name: string, color: string) {
+    super();
+    this.name = name;
+    this.color = color;
+  }
+  toDOM() {
+    const el = document.createElement("span");
+    el.style.borderLeft = `2px solid ${this.color}`;
+    el.style.marginLeft = "1px";
+    el.style.height = "1.2em";
+    el.style.display = "inline-block";
+    el.style.verticalAlign = "middle";
+    el.style.background = "rgba(0,0,0,0.10)";
+    el.style.position = "relative";
+    el.innerHTML = `<span style="position:absolute;top:-1.3em;left:0.2em;background:${this.color};color:#fff;padding:0 4px;border-radius:3px;font-size:0.7em;z-index:32;white-space:nowrap;">${this.name}</span>`;
+    return el;
+  }
+}
+
+export default function CollaborativeCodeEditor() {
+  const { user } = useAuthUser();
+  const username = user?.user_metadata?.name || user?.email || "Anonymous";
+  const [language, setLanguage] = useState("javascript");
+  const [localValue, setLocalValue] = useState(FILE_TEMPLATES["javascript"]);
+  const [clientId, setClientId] = useState<number| null>(null);
+  const editorRef = useRef<any>();
+  const ydocRef = useRef<Y.Doc | null>(null);
+  const providerRef = useRef<WebsocketProvider | null>(null);
+  const ytextRef = useRef<Y.Text | null>(null);
+  const awarenessRef = useRef<any>(null);
+  // track usernames for cursors/who's online
+  const [onlineUsers, setOnlineUsers] = useState<{name: string; color: string}[]>([]);
+
+  // setup Yjs & awareness
+  useEffect(() => {
+    const ydoc = new Y.Doc();
+    ydocRef.current = ydoc;
+    const provider = new WebsocketProvider(YWS_URL, `${ROOM}-${language}`, ydoc);
+    providerRef.current = provider;
+    const ytext = ydoc.getText("codemirror");
+    ytextRef.current = ytext;
+
+    // Awareness: for cursors/user info
+    const awareness = provider.awareness;
+    awarenessRef.current = awareness;
+    setClientId(provider.awareness.clientID);
+    awareness.setLocalStateField("user", { name: username, color: randomColorFromString(username) });
+
+    // On awareness update, update online users
+    const updateAw = () => {
+      const states = Array.from(awareness.getStates().values());
+      setOnlineUsers(
+        states
+          .map((s: any) => s.user)
+          .filter((u: any) => !!u)
+      );
+    };
+    awareness.on("change", updateAw);
+    updateAw();
+
+    // Yjs: When ytext changes, update local value (but avoid immediate echo)
+    const observer = () => {
+      const curVal = ytext?.toString() ?? "";
+      setLocalValue(curVal);
+    };
+    ytext.observe(observer);
+
+    // Initialize the doc with the language's template if empty
+    if (ytext.length === 0) ytext.insert(0, FILE_TEMPLATES[language]);
 
     return () => {
-      supabase.removeChannel(channel);
+      ytext.unobserve(observer);
+      awareness.off("change", updateAw);
+      provider.destroy();
+      ydoc.destroy();
     };
-  }, [user, username, roomId]);
+    // Only re-run on language switch or user
+  }, [language, username]);
 
-  // Broadcast code updates
-  const onChange = useCallback(
-    (val: string, viewUpdate?: any) => {
-      setValue(val);
-      if (!user) return;
-      // Only broadcast if local change
-      supabase.channel(`collab-editor-${roomId}`).send({
-        type: "broadcast",
-        event: "code_update",
-        payload: { code: val }
-      });
-    },
-    [user, roomId]
-  );
+  // On local edit, update Yjs text (but avoid echo by using source of truth from Yjs emit)
+  const handleCodeChange = (val: string) => {
+    if (ytextRef.current) {
+      if (ytextRef.current.toString() !== val) {
+        // Compute minimal diff
+        ytextRef.current.delete(0, ytextRef.current.length);
+        ytextRef.current.insert(0, val);
+      }
+    }
+    setLocalValue(val);
+  };
 
-  // Broadcast cursor changes
-  const onCursor = useCallback(
-    (view: any) => {
-      if (!user) return;
-      const pos = view?.state?.selection?.main?.head;
-      supabase.channel(`collab-editor-${roomId}`).send({
-        type: "broadcast",
-        event: "cursor",
-        payload: {
-          userId: user.id,
-          username,
-          color: randomColorFromString(username),
-          pos,
-        },
-      });
-    },
-    [user, username, roomId]
-  );
+  // On cursor movement, update awareness
+  const handleUpdate = (viewUpdate: ViewUpdate) => {
+    const main = viewUpdate.state.selection.main;
+    if (awarenessRef.current) {
+      awarenessRef.current.setLocalStateField("cursor", { pos: main.head });
+    }
+  };
 
-  // Display foreign cursors in the editor (rudimentary, via overlay)
-  const renderCursors = () =>
-    Object.entries(cursors).map(([k, info]) => {
-      // Hack: show near the top left of editor, this is not perfect - for production, use CodeMirror decorations
-      return (
-        <div
-          key={k}
-          className="absolute z-20 px-2 py-1 rounded text-xs font-semibold"
-          style={{
-            top: 6 + (20 * Object.keys(cursors).indexOf(k)),
-            left: 8,
-            background: info.color,
-            color: "#fff",
-            opacity: 0.85,
-          }}
-        >
-          {info.username}
-        </div>
-      );
-    });
-
-  // Handle language switch and reset template
+  // handle language switch (clear Yjs data and use new room)
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setLanguage(e.target.value);
-    setValue(FILE_TEMPLATES[e.target.value]);
-    // Broadcast the language & code switch
-    supabase.channel(`collab-editor-${roomId}`).send({
-      type: "broadcast",
-      event: "code_update",
-      payload: { code: FILE_TEMPLATES[e.target.value] },
-    });
   };
+
+  // Render current online users (via awareness)
+  const renderCursors = () => (
+    <div className="flex gap-2 flex-wrap items-center mt-2 px-2">
+      <span className="text-xs text-muted-foreground">Online:</span>
+      {onlineUsers.map((info, idx) => (
+        <span key={info.name + idx} className="inline-block px-2 rounded bg-muted"
+          style={{ color: info.color, fontWeight: 600 }}>
+          {info.name}
+        </span>
+      ))}
+    </div>
+  );
 
   return (
     <div className="relative bg-card border rounded-lg shadow-lg p-2 min-h-[440px]">
       <div className="flex gap-3 items-center pb-3 px-2">
         <span className="font-semibold flex items-center gap-1">
           <span className="size-4 inline-block rounded bg-primary mr-2" />
-          Live Collaboration
+          Live Collaboration (Yjs)
         </span>
         <label>
           <span className="text-xs text-muted-foreground mr-1">Language:</span>
@@ -186,39 +211,27 @@ export default function CollaborativeCodeEditor() {
           File: <span className="font-mono font-medium">{language === "javascript" ? "main.js" : language === "python" ? "main.py" : "README.md"}</span>
         </span>
       </div>
-      <div className="relative">
-        {/* Display other users' cursors */}
-        {renderCursors()}
+      <div>
         <CodeMirror
           ref={editorRef}
-          value={value}
+          value={localValue}
           height="340px"
           theme="dark"
-          extensions={[EXTENSIONS_MAP[language]]}
-          onChange={(val, viewUpdate) => {
-            onChange(val, viewUpdate);
-          }}
+          extensions={[
+            EXTENSIONS_MAP[language],
+            drawSelection(),
+            // @ts-ignore
+            clientId !== null && awarenessRef.current ? yRemoteCursorExtension(awarenessRef.current, clientId) : []
+          ]}
           basicSetup={{
             tabSize: 2,
           }}
-          onUpdate={(viewUpdate) => {
-            onCursor(viewUpdate.view);
-          }}
+          onChange={handleCodeChange}
+          onUpdate={handleUpdate}
           className={cn("rounded border bg-background text-base")}
         />
       </div>
-      <div className="flex gap-3 mt-2 px-2 items-end">
-        <span className="text-xs text-muted-foreground">Cursors: </span>
-        {Object.values(cursors).map((info, idx) => (
-          <span
-            key={info.username + idx}
-            className="inline-block px-2 rounded bg-muted"
-            style={{ color: info.color, fontWeight: 600 }}
-          >
-            {info.username}
-          </span>
-        ))}
-      </div>
+      {renderCursors()}
     </div>
   );
 }
