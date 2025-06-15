@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "react-beautiful-dnd";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -67,7 +66,7 @@ const KanbanBoard: React.FC = () => {
     const title = prompt("Enter task title:");
     if (!title) return;
     try {
-      await createTask({ project_id: HARDCODED_PROJECT_ID, title, status: "todo", owner_id: user.id });
+      await createTask({ project_id: HARDCODED_PROJECT_ID, title, status: "todo", owner_id: user.id, description: "" });
       toast({ title: "Task created!" });
     } catch (err: any) {
       toast({ title: "Error creating task", description: err?.message || String(err), variant: "destructive" });

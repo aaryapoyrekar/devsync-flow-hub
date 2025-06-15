@@ -7,7 +7,7 @@ const MOCK_PRS = [
   {
     id: "42",
     title: "Add feature: Kanban drag-and-drop",
-    status: "open",
+    status: "open" as "open",
     author: "alice",
     date: "2025-06-15",
     comments: [
@@ -22,7 +22,7 @@ const MOCK_PRS = [
   {
     id: "41",
     title: "Fix bug: incorrect user permissions",
-    status: "closed",
+    status: "closed" as "closed",
     author: "carol",
     date: "2025-06-13",
     comments: [
@@ -43,7 +43,7 @@ const MOCK_PRS = [
   {
     id: "40",
     title: "Docs: update README",
-    status: "merged",
+    status: "merged" as "merged",
     author: "ben",
     date: "2025-06-10",
     comments: [],

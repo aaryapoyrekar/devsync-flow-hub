@@ -14,7 +14,7 @@ import KanbanBoard from "./KanbanBoard";
 import Chat from "./Chat";
 import ProtectedRoute from "../components/ProtectedRoute";
 
-const Dashboard = () => {
+const DashboardPage = () => {
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-8">
       <div>
@@ -45,4 +45,4 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;
+export default DashboardPage;
