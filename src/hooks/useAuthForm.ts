@@ -35,7 +35,7 @@ export function useAuthForm(): UseAuthFormResult {
     setLoading(true);
     setError(null);
     // Supabase "meta data" can store the name for now (if you implement profiles later)
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -43,6 +43,21 @@ export function useAuthForm(): UseAuthFormResult {
         emailRedirectTo: `${window.location.origin}/dashboard`
       }
     });
+
+    // Add role insert after successful signup
+    let user_id: string | null = null;
+    if (!error && data?.user?.id) {
+      user_id = data.user.id;
+      // Give every new user the "member" role
+      const { error: roleError } = await supabase
+        .from("user_roles")
+        .insert([{ user_id, role: "member" }]);
+      // If roleError, inform user but don't block sign up
+      if (roleError) {
+        setError("Account created but failed to set role: " + roleError.message);
+      }
+    }
+
     setLoading(false);
 
     if (error) {

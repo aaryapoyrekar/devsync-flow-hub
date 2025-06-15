@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -13,6 +12,7 @@ import Register from "./pages/Register";
 import CodeEditor from "./pages/CodeEditor";
 import KanbanBoard from "./pages/KanbanBoard";
 import Chat from "./pages/Chat";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -31,10 +31,46 @@ const App = () => (
           <Route element={<NoLayout><Login /></NoLayout>} path="/login" />
           <Route element={<NoLayout><Register /></NoLayout>} path="/register" />
           {/* Main pages with sidebar layout */}
-          <Route element={<MainLayout><Dashboard /></MainLayout>} path="/dashboard" />
-          <Route element={<MainLayout><CodeEditor /></MainLayout>} path="/editor" />
-          <Route element={<MainLayout><KanbanBoard /></MainLayout>} path="/kanban" />
-          <Route element={<MainLayout><Chat /></MainLayout>} path="/chat" />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <Dashboard />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/editor"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "member"]}>
+                <MainLayout>
+                  <CodeEditor />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/kanban"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "member"]}>
+                <MainLayout>
+                  <KanbanBoard />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/chat"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "member"]}>
+                <MainLayout>
+                  <Chat />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
           {/* 404 */}
           <Route path="*" element={<NotFound />} />
         </Routes>
