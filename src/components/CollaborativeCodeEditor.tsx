@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 // Yjs and provider imports
 import * as Y from "yjs";
 // FIX: Import websocket provider for Vite with direct /dist path
-import { WebsocketProvider } from "y-websocket/dist/websocket.js";
+import { WebsocketProvider } from "y-websocket";
 import { EditorView, keymap, drawSelection, ViewUpdate, Decoration, DecorationSet, WidgetType } from "@codemirror/view";
 import { Extension, StateField, StateEffect } from "@codemirror/state";
 
