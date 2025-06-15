@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
@@ -9,7 +8,7 @@ import { cn } from "@/lib/utils";
 // Yjs and provider imports
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
-import { EditorView, keymap, drawSelection, ViewUpdate, Decoration, DecorationSet } from "@codemirror/view";
+import { EditorView, keymap, drawSelection, ViewUpdate, Decoration, DecorationSet, WidgetType } from "@codemirror/view";
 import { Extension, StateField, StateEffect } from "@codemirror/state";
 
 const LANGUAGE_OPTIONS = [
@@ -74,6 +73,9 @@ class CursorWidget extends WidgetType {
     this.name = name;
     this.color = color;
   }
+  eq(other: WidgetType) {
+    return other instanceof CursorWidget && this.name === (other as CursorWidget).name && this.color === (other as CursorWidget).color;
+  }
   toDOM() {
     const el = document.createElement("span");
     el.style.borderLeft = `2px solid ${this.color}`;
@@ -86,6 +88,7 @@ class CursorWidget extends WidgetType {
     el.innerHTML = `<span style="position:absolute;top:-1.3em;left:0.2em;background:${this.color};color:#fff;padding:0 4px;border-radius:3px;font-size:0.7em;z-index:32;white-space:nowrap;">${this.name}</span>`;
     return el;
   }
+  ignoreEvent() { return true; }
 }
 
 export default function CollaborativeCodeEditor() {
