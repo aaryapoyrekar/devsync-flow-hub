@@ -7,7 +7,8 @@ import { useAuthUser } from "@/hooks/useAuthUser";
 import { cn } from "@/lib/utils";
 // Yjs and provider imports
 import * as Y from "yjs";
-import { WebsocketProvider } from "y-websocket";
+// FIX: Import websocket provider for Vite with direct /dist path
+import { WebsocketProvider } from "y-websocket/dist/websocket.js";
 import { EditorView, keymap, drawSelection, ViewUpdate, Decoration, DecorationSet, WidgetType } from "@codemirror/view";
 import { Extension, StateField, StateEffect } from "@codemirror/state";
 
