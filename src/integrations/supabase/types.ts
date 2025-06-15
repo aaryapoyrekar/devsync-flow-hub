@@ -9,6 +9,57 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      projects: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          owner_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
+        }
+        Relationships: []
+      }
+      tasks: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          owner_id: string
+          project_id: string
+          status: Database["public"]["Enums"]["kanban_status"]
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          owner_id: string
+          project_id: string
+          status?: Database["public"]["Enums"]["kanban_status"]
+          title: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          owner_id?: string
+          project_id?: string
+          status?: Database["public"]["Enums"]["kanban_status"]
+          title?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -45,6 +96,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "member"
+      kanban_status: "todo" | "inprogress" | "done"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -161,6 +213,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "member"],
+      kanban_status: ["todo", "inprogress", "done"],
     },
   },
 } as const

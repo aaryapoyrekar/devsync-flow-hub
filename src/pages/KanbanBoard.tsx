@@ -1,77 +1,20 @@
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "react-beautiful-dnd";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useAuthUser } from "@/hooks/useAuthUser";
+import { useTasks } from "@/hooks/useTasks";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/hooks/use-toast";
 
-type User = {
-  id: string;
-  name: string;
-};
+// Demo: just using first project for now
+const HARDCODED_PROJECT_ID = "demo-project-uuid"; // Replace with actual if project management implemented
 
-type Task = {
-  id: string;
-  title: string;
-  description: string;
-  owner: User;
-};
-
-type Column = {
-  id: string;
-  title: string;
-  taskIds: string[];
-};
-
-const users: Record<string, User> = {
-  alice: { id: "alice", name: "Alice Taylor" },
-  bob: { id: "bob", name: "Bob Chen" },
-  eve: { id: "eve", name: "Eve Singh" },
-};
-
-const initialTasks: Record<string, Task> = {
-  "task-1": {
-    id: "task-1",
-    title: "Design login page",
-    description: "Finalize UI for login",
-    owner: users.alice,
-  },
-  "task-2": {
-    id: "task-2",
-    title: "Set up Supabase",
-    description: "Initialize database, user auth",
-    owner: users.bob,
-  },
-  "task-3": {
-    id: "task-3",
-    title: "Write onboarding docs",
-    description: "Draft docs for onboarding",
-    owner: users.eve,
-  },
-  "task-4": {
-    id: "task-4",
-    title: "Implement drag and drop",
-    description: "Add Kanban DnD (this ticket!)",
-    owner: users.bob,
-  },
-};
-
-// Columns: To Do, In Progress, Done
-const initialColumns: Record<string, Column> = {
-  todo: {
-    id: "todo",
-    title: "To Do",
-    taskIds: ["task-1", "task-2"],
-  },
-  inprogress: {
-    id: "inprogress",
-    title: "In Progress",
-    taskIds: ["task-4"],
-  },
-  done: {
-    id: "done",
-    title: "Done",
-    taskIds: ["task-3"],
-  },
-};
+const KANBAN_STATUS = [
+  { id: "todo", title: "To Do" },
+  { id: "inprogress", title: "In Progress" },
+  { id: "done", title: "Done" },
+];
 
 const getAvatarInitials = (name: string) =>
   name
@@ -82,58 +25,67 @@ const getAvatarInitials = (name: string) =>
     .toUpperCase();
 
 const KanbanBoard: React.FC = () => {
-  const [columns, setColumns] = useState(initialColumns);
-  const [tasks, setTasks] = useState(initialTasks);
+  const { user } = useAuthUser();
+  // Use demo project ID for now; in real app, pass this as a prop or read from context
+  const { tasks, isLoading, error, createTask, updateTask, deleteTask } = useTasks(HARDCODED_PROJECT_ID, user?.id ?? undefined);
 
-  const onDragEnd = (result: DropResult) => {
-    const { destination, source, draggableId } = result;
-    // dropped outside list
-    if (!destination) return;
-    // no movement
-    if (
-      destination.droppableId === source.droppableId &&
-      destination.index === source.index
-    ) {
-      return;
-    }
-
-    const startCol = columns[source.droppableId];
-    const finishCol = columns[destination.droppableId];
-
-    // Moving within same column
-    if (startCol === finishCol) {
-      const newTaskIds = Array.from(startCol.taskIds);
-      newTaskIds.splice(source.index, 1);
-      newTaskIds.splice(destination.index, 0, draggableId);
-
-      const newCol = { ...startCol, taskIds: newTaskIds };
-      setColumns({ ...columns, [newCol.id]: newCol });
-      return;
-    }
-
-    // Moving between columns
-    const startTaskIds = Array.from(startCol.taskIds);
-    startTaskIds.splice(source.index, 1);
-    const newStartCol = { ...startCol, taskIds: startTaskIds };
-
-    const finishTaskIds = Array.from(finishCol.taskIds);
-    finishTaskIds.splice(destination.index, 0, draggableId);
-    const newFinishCol = { ...finishCol, taskIds: finishTaskIds };
-
-    setColumns({
-      ...columns,
-      [newStartCol.id]: newStartCol,
-      [newFinishCol.id]: newFinishCol,
+  // Split tasks per status
+  const columns = useMemo(() => {
+    const mapping: Record<string, typeof tasks> = {
+      todo: [],
+      inprogress: [],
+      done: [],
+    };
+    (tasks || []).forEach((task) => {
+      if (mapping[task.status]) mapping[task.status].push(task);
     });
+    return mapping;
+  }, [tasks]);
+
+  // Handle drag between columns
+  const onDragEnd = async (result: DropResult) => {
+    const { destination, source, draggableId } = result;
+    if (!destination) return;
+    if (destination.droppableId === source.droppableId && destination.index === source.index) return;
+
+    const sourceStatus = source.droppableId;
+    const destStatus = destination.droppableId;
+    const movedTask = columns[sourceStatus][source.index];
+    if (!movedTask) return;
+
+    try {
+      await updateTask({ id: movedTask.id, fields: { status: destStatus as any } });
+      toast({ title: "Task moved!", description: `${movedTask.title} is now in "${destStatus.replace(/^\w/, c => c.toUpperCase())}"` });
+    } catch (err: any) {
+      toast({ title: "Failed to move", description: err?.message || String(err), variant: "destructive" });
+    }
+  };
+
+  // Handle quick-create for demo only
+  const handleCreateTask = async () => {
+    if (!user) return toast({ title: "Sign in required" });
+    const title = prompt("Enter task title:");
+    if (!title) return;
+    try {
+      await createTask({ project_id: HARDCODED_PROJECT_ID, title, status: "todo", owner_id: user.id });
+      toast({ title: "Task created!" });
+    } catch (err: any) {
+      toast({ title: "Error creating task", description: err?.message || String(err), variant: "destructive" });
+    }
   };
 
   return (
     <div className="max-w-6xl mx-auto">
-      <h1 className="text-2xl sm:text-3xl font-semibold mb-6">Kanban Board</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl sm:text-3xl font-semibold">Kanban Board</h1>
+        <Button onClick={handleCreateTask} size="sm">+ New Task</Button>
+      </div>
       <div className="overflow-auto">
+        {isLoading && <div className="text-muted-foreground text-center py-10">Loading...</div>}
+        {error && <div className="text-red-600 text-center py-4">{(error as Error)?.message}</div>}
         <DragDropContext onDragEnd={onDragEnd}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pb-8">
-            {Object.values(columns).map((col) => (
+            {KANBAN_STATUS.map((col) => (
               <Droppable droppableId={col.id} key={col.id}>
                 {(provided, snapshot) => (
                   <div
@@ -144,42 +96,52 @@ const KanbanBoard: React.FC = () => {
                   >
                     <div className="font-bold text-lg mb-3 flex items-center gap-2">
                       {col.title}
-                      <span className="bg-muted text-xs rounded px-2 py-1 ml-2">{col.taskIds.length}</span>
+                      <span className="bg-muted text-xs rounded px-2 py-1 ml-2">{columns[col.id].length}</span>
                     </div>
                     <div className="flex-1 flex flex-col gap-4">
-                      {col.taskIds.map((taskId, idx) => {
-                        const task = tasks[taskId];
-                        return (
-                          <Draggable draggableId={task.id} index={idx} key={task.id}>
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                className={`rounded-md bg-background border p-3 shadow
-                                  flex items-center gap-3 group transition-all
-                                  ${snapshot.isDragging ? "ring-2 ring-primary/60 scale-105" : ""}
-                                `}
-                                style={{ ...provided.draggableProps.style }}
-                              >
-                                <Avatar className="h-8 w-8 bg-muted">
-                                  <AvatarFallback>
-                                    {getAvatarInitials(task.owner.name)}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div className="flex-1">
-                                  <div className="font-medium text-[16px]">
-                                    {task.title}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground truncate">
-                                    {task.description}
-                                  </div>
+                      {columns[col.id].map((task, idx) => (
+                        <Draggable draggableId={task.id} index={idx} key={task.id}>
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              {...provided.dragHandleProps}
+                              className={`rounded-md bg-background border p-3 shadow
+                                flex items-center gap-3 group transition-all
+                                ${snapshot.isDragging ? "ring-2 ring-primary/60 scale-105" : ""}
+                              `}
+                              style={{ ...provided.draggableProps.style }}
+                            >
+                              <Avatar className="h-8 w-8 bg-muted">
+                                <AvatarFallback>
+                                  {task.owner_id ? getAvatarInitials(task.owner_id) : "U"}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex-1">
+                                <div className="font-medium text-[16px] truncate">
+                                  {task.title}
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {task.description}
                                 </div>
                               </div>
-                            )}
-                          </Draggable>
-                        );
-                      })}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={async () => {
+                                  if (window.confirm("Delete task?")) {
+                                    await deleteTask(task.id);
+                                    toast({ title: "Task deleted!" });
+                                  }
+                                }}
+                                className="opacity-0 group-hover:opacity-100"
+                              >
+                                🗑️
+                              </Button>
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
                       {provided.placeholder}
                     </div>
                   </div>
@@ -194,4 +156,3 @@ const KanbanBoard: React.FC = () => {
 };
 
 export default KanbanBoard;
-
